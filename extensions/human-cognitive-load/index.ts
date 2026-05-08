@@ -23,6 +23,7 @@ import { PRESETS, DEFAULT_PRESET } from "./config";
 import type { CognitivePreset } from "./config";
 import { createInitialState, applyStreamDelta, applyDecay } from "./state";
 import { setStatus, clearStatus, renderBar, formatChars } from "./render";
+import { loadSettings, saveSettings } from "./settings";
 
 export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 	let state = createInitialState();
@@ -65,12 +66,14 @@ export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 	const handlers: Record<string, (ctx: ExtensionCommandContext) => void> = {
 		on: (ctx) => {
 			enabled = true;
+			void saveSettings({ preset, enabled });
 			lastTickAt = Date.now();
 			refreshStatus(ctx);
 			notify(ctx, statusMessage());
 		},
 		off: (ctx) => {
 			enabled = false;
+			void saveSettings({ preset, enabled });
 			refreshStatus(ctx);
 			notify(ctx, statusMessage());
 		},
@@ -89,6 +92,7 @@ export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 				name,
 				(ctx: ExtensionCommandContext) => {
 					preset = name;
+					void saveSettings({ preset, enabled });
 					refreshStatus(ctx);
 					notify(ctx, statusMessage());
 				},
@@ -117,13 +121,14 @@ export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 		if (interval) {
 			clearInterval(interval);
 		}
+		const saved = await loadSettings();
 		state = createInitialState();
-		enabled = true;
-		preset = DEFAULT_PRESET;
+		enabled = saved.enabled;
+		preset = saved.preset;
 		lastTickAt = Date.now();
 		refreshStatus(ctx);
 		interval = setInterval(() => tick(ctx), 100);
-		notify(ctx, `Human Cognitive Load active • preset: ${preset} — /human-cognitive-load [on|off|reset|status|fish|cat|bee|bonobo]`);
+		notify(ctx, `${statusMessage()}\n/human-cognitive-load [on|off|reset|status|fish|cat|bee|bonobo]`);
 	});
 
 	pi.on("message_update", async (event, ctx) => {
