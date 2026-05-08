@@ -4,24 +4,34 @@
 // arrive on screen, the higher the load climbs. Load decays passively over time, reflecting
 // natural recovery during pauses or breaks.
 //
-// Status bar: [████░░░░░░] 38% • 763ch
+// Status bar: [████░░░░░░] 38% • 763ch • cat
 //   Green  0–40%   — light usage
 //   Yellow 41–70%  — moderate load
 //   Red    71–100% — high saturation
 //
+// Four sensitivity presets:
+//   fish   — barely registers, very fast recovery (light users)
+//   cat    — balanced, default mode
+//   bee    — higher sensitivity, slower decay (focused sessions)
+//   bonobo — saturates fast, very slow recovery (maximum sensitivity)
+//
 // The /human-cognitive-load command is available in pi's command palette (tab to autocomplete).
-// Commands: /human-cognitive-load [on|off|reset|status]
+// Commands: /human-cognitive-load [on|off|reset|status|fish|cat|bee|bonobo]
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_COGNITIVE_CONFIG } from "./config";
+import { PRESETS, DEFAULT_PRESET } from "./config";
+import type { CognitivePreset } from "./config";
 import { createInitialState, applyStreamDelta, applyDecay } from "./state";
 import { setStatus, clearStatus, renderBar, formatChars } from "./render";
 
 export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 	let state = createInitialState();
 	let enabled = true;
+	let preset: CognitivePreset = DEFAULT_PRESET;
 	let interval: NodeJS.Timeout | undefined;
 	let lastTickAt = Date.now();
+
+	const config = () => PRESETS[preset];
 
 	const notify = (ctx: ExtensionContext, message: string): void => {
 		if (!ctx.hasUI) return;
@@ -29,13 +39,13 @@ export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 	};
 
 	const statusMessage = (): string => {
-		const bar = renderBar(state.load, DEFAULT_COGNITIVE_CONFIG.barSlots);
-		return `Human Cognitive Load: ${enabled ? "ON" : "OFF"} • ${bar} • ${formatChars(state.totalCharsReceived)}ch`;
+		const bar = renderBar(state.load, config().barSlots);
+		return `Human Cognitive Load: ${enabled ? "ON" : "OFF"} • ${bar} • ${formatChars(state.totalCharsReceived)}ch • ${preset}`;
 	};
 
 	const refreshStatus = (ctx: ExtensionContext): void => {
 		if (enabled) {
-			setStatus(ctx, state);
+			setStatus(ctx, state, config(), preset);
 			return;
 		}
 		clearStatus(ctx);
@@ -46,9 +56,11 @@ export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 		const elapsedSeconds = (now - lastTickAt) / 1000;
 		lastTickAt = now;
 		if (!enabled || elapsedSeconds <= 0) return;
-		state = applyDecay(state, elapsedSeconds, DEFAULT_COGNITIVE_CONFIG);
+		state = applyDecay(state, elapsedSeconds, config());
 		refreshStatus(ctx);
 	};
+
+	const PRESETS_KEYS = Object.keys(PRESETS) as CognitivePreset[];
 
 	const handlers: Record<string, (ctx: ExtensionCommandContext) => void> = {
 		on: (ctx) => {
@@ -72,12 +84,22 @@ export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 			tick(ctx);
 			notify(ctx, statusMessage());
 		},
+		...Object.fromEntries(
+			PRESETS_KEYS.map((name) => [
+				name,
+				(ctx: ExtensionCommandContext) => {
+					preset = name;
+					refreshStatus(ctx);
+					notify(ctx, statusMessage());
+				},
+			])
+		),
 	};
 
 	pi.registerCommand("human-cognitive-load", {
-		description: "Control Human Cognitive Load (on/off/reset/status)",
+		description: "Control Human Cognitive Load (on/off/reset/status/fish/cat/bee/bonobo)",
 		getArgumentCompletions: (prefix: string) => {
-			const actions = ["on", "off", "reset", "status"];
+			const actions = ["on", "off", "reset", "status", ...PRESETS_KEYS];
 			return actions.filter((action) => action.startsWith(prefix)).map((value) => ({ value, label: value }));
 		},
 		handler: async (args, ctx) => {
@@ -87,7 +109,7 @@ export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 				handler(ctx);
 				return;
 			}
-			notify(ctx, "Usage: /human-cognitive-load [on|off|reset|status]");
+			notify(ctx, "Usage: /human-cognitive-load [on|off|reset|status|fish|cat|bee|bonobo]");
 		},
 	});
 
@@ -97,17 +119,18 @@ export default function registerHumanCognitiveLoad(pi: ExtensionAPI): void {
 		}
 		state = createInitialState();
 		enabled = true;
+		preset = DEFAULT_PRESET;
 		lastTickAt = Date.now();
 		refreshStatus(ctx);
 		interval = setInterval(() => tick(ctx), 100);
-		notify(ctx, "Human Cognitive Load active — /human-cognitive-load [on|off|reset|status]");
+		notify(ctx, `Human Cognitive Load active • preset: ${preset} — /human-cognitive-load [on|off|reset|status|fish|cat|bee|bonobo]`);
 	});
 
 	pi.on("message_update", async (event, ctx) => {
 		if (!enabled) return;
 		const { assistantMessageEvent } = event;
 		if (assistantMessageEvent.type === "text_delta") {
-			state = applyStreamDelta(state, assistantMessageEvent.delta.length, DEFAULT_COGNITIVE_CONFIG);
+			state = applyStreamDelta(state, assistantMessageEvent.delta.length, config());
 			refreshStatus(ctx);
 		}
 	});

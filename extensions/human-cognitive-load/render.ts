@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_COGNITIVE_CONFIG } from "./config";
+import type { CognitiveConfig, CognitivePreset } from "./config";
 import type { CognitiveState } from "./state";
 
 const STATUS_KEY = "human-cognitive-load";
@@ -23,11 +23,11 @@ export function renderBar(load: number, slots: number): string {
 	return `[${filled}${empty}] ${Math.round(normalized)}%`;
 }
 
-export function setStatus(ctx: ExtensionContext, state: CognitiveState): void {
+export function setStatus(ctx: ExtensionContext, state: CognitiveState, config: CognitiveConfig, preset: CognitivePreset): void {
 	if (!ctx.hasUI) return;
-	const bar = renderBar(state.load, DEFAULT_COGNITIVE_CONFIG.barSlots);
+	const bar = renderBar(state.load, config.barSlots);
 	const color = getStatusColor(state.load);
-	ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg(color, `${bar} • ${formatChars(state.totalCharsReceived)}ch`));
+	ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg(color, `${bar} • ${formatChars(state.totalCharsReceived)}ch • ${preset}`));
 }
 
 export function clearStatus(ctx: ExtensionContext): void {
